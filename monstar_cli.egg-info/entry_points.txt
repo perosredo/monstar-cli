@@ -1,0 +1,2 @@
+[console_scripts]
+monstar = monstar.cli:main

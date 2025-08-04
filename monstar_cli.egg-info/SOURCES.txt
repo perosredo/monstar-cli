@@ -1,0 +1,11 @@
+LICENSE
+README.md
+setup.py
+monstar/__init__.py
+monstar/cli.py
+monstar_cli.egg-info/PKG-INFO
+monstar_cli.egg-info/SOURCES.txt
+monstar_cli.egg-info/dependency_links.txt
+monstar_cli.egg-info/entry_points.txt
+monstar_cli.egg-info/requires.txt
+monstar_cli.egg-info/top_level.txt
