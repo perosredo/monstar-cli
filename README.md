@@ -25,9 +25,6 @@ pipx install monstar-cli
 
 ### Command Line
 ```bash
-# List saved layouts
-monstar list
-
 # Save current display configuration (including Tiling Shell layouts)
 monstar save work
 
@@ -36,6 +33,9 @@ monstar load work
 
 # Remove a layout
 monstar remove old-layout
+
+# List saved layouts
+monstar list
 
 # Set up numbered shortcuts
 monstar shortcut work 1
@@ -68,7 +68,7 @@ sudo dnf install python3-gobject
 Layouts are stored in `~/.config/monstar/` as JSON files.
 
 ### Layout Files Include:
-- Display configuration (monitor positions, scales, resolutions, rotations)
+- Display configuration (monitor positions, scales, resolutions, on/off states, rotations)
 - Tiling Shell window layouts (if Tiling Shell extension is installed)
 - Custom shortcuts mapping
 
