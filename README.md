@@ -4,7 +4,7 @@
 
 ## Features
 
-- 🖥️ **Save/Load Display Layouts** - Capture your current monitor setup and switch between them instantly
+- 🖥️ **Save/Load Display Layouts** - Capture your current monitor setup, including on/off states, and switch between them instantly
 - 🎨 **Tiling Shell Integration** - Saves and restores Tiling Shell window layouts with each display profile
 - ⚡ **Numbered Shortcuts** - Quick access with `monstar 1`, `monstar 2`, etc.
 - 🔧 **Monitor Name Fix** - Automatically refreshes monitor names after configuration changes
