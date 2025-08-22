@@ -190,8 +190,8 @@ class DisplayManager:
             print(f"Warning: Could not backup Tiling Shell config: {e}")
             return None
     
-    def restore_tiling_shell_config(self, config):
-        """Restore Tiling Shell configuration to dconf"""
+    def restore_tiling_shell_config(self, config, current_monitor_serials):
+        """Restore Tiling Shell configuration to dconf with proper monitor mapping"""
         try:
             if not config:
                 return False
@@ -201,10 +201,47 @@ class DisplayManager:
                 subprocess.run(['dconf', 'write', '/org/gnome/shell/extensions/tilingshell/layouts-json', 
                               config['layouts_json']], capture_output=True)
             
-            # Restore selected layouts
+            # Handle selected layouts with monitor mapping
             if config.get('selected_layouts'):
+                selected_layouts = config['selected_layouts']
+                
+                # Check if we have monitor mapping info
+                saved_mapping = config.get('monitor_mapping', [])
+                if saved_mapping and len(saved_mapping) == len(current_monitor_serials):
+                    # Remap the selected layouts array based on monitor serial changes
+                    try:
+                        import ast
+                        # Handle dconf string format - remove outer quotes if present
+                        clean_selected = selected_layouts.strip()
+                        if clean_selected.startswith("'") and clean_selected.endswith("'"):
+                            clean_selected = clean_selected[1:-1]
+                        
+                        # Use ast.literal_eval to handle Python-style arrays with single quotes
+                        layouts_array = ast.literal_eval(clean_selected)
+                        
+                        # Create mapping from saved order to current order
+                        reorder_map = {}
+                        for i, saved_serial in enumerate(saved_mapping):
+                            if saved_serial in current_monitor_serials:
+                                reorder_map[i] = current_monitor_serials.index(saved_serial)
+                        
+                        # Reorder the layouts array
+                        if reorder_map and len(reorder_map) == len(layouts_array):
+                            new_layouts = [None] * len(layouts_array)
+                            for old_idx, new_idx in reorder_map.items():
+                                if old_idx < len(layouts_array) and new_idx < len(new_layouts):
+                                    new_layouts[new_idx] = layouts_array[old_idx]
+                            
+                            # Only apply if we successfully remapped all monitors
+                            if None not in new_layouts:
+                                selected_layouts = str(new_layouts)
+                                print("  - Tiling Shell layouts remapped for monitor order changes")
+                    
+                    except Exception as e:
+                        print(f"  - Warning: Could not remap Tiling Shell layouts: {e}")
+                
                 subprocess.run(['dconf', 'write', '/org/gnome/shell/extensions/tilingshell/selected-layouts', 
-                              config['selected_layouts']], capture_output=True)
+                              selected_layouts], capture_output=True)
             
             return True
         except Exception as e:
@@ -236,6 +273,8 @@ class DisplayManager:
             # Extract monitor serial for reliable identification
             monitor_serial = None
             monitor_info = {}
+            current_mode = None
+            
             if physical_spec:
                 # physical_spec is [connector, vendor, product, serial]
                 connector, vendor, product, serial = physical_spec[0]
@@ -246,6 +285,24 @@ class DisplayManager:
                     'serial': serial,
                     'connector': connector  # Keep for reference/UI
                 }
+                
+                # Find the current mode for this monitor
+                for phys_mon in physical_monitors:
+                    if len(phys_mon[0]) >= 4 and phys_mon[0][3] == serial:
+                        # Find the current mode
+                        for mode in phys_mon[1]:  # modes list
+                            mode_props = mode[6] if len(mode) > 6 else {}
+                            if isinstance(mode_props, dict) and mode_props.get('is-current'):
+                                current_mode = mode[0]
+                                break
+                        # If no current mode found, try preferred mode
+                        if not current_mode:
+                            for mode in phys_mon[1]:
+                                mode_props = mode[6] if len(mode) > 6 else {}
+                                if isinstance(mode_props, dict) and mode_props.get('is-preferred'):
+                                    current_mode = mode[0]
+                                    break
+                        break
             
             layout_to_save.append({
                 'x': x,
@@ -255,16 +312,29 @@ class DisplayManager:
                 'primary': primary,
                 'monitor_serial': monitor_serial,
                 'monitor_info': monitor_info,
+                'current_mode': current_mode,
                 'properties': properties if 'properties' in locals() else {}
             })
 
+        # Sort monitors by serial for consistent ordering
+        layout_to_save.sort(key=lambda m: m.get('monitor_serial') or '')
+        
         # Get Tiling Shell configuration
         tiling_shell_config = self.get_tiling_shell_config()
         
-        # Combine display layout and Tiling Shell config
+        # Enhance Tiling Shell config with monitor mapping
+        enhanced_tiling_config = None
+        if tiling_shell_config:
+            enhanced_tiling_config = dict(tiling_shell_config)
+            # Create monitor serial mapping for current layout order
+            enhanced_tiling_config['monitor_mapping'] = [
+                m.get('monitor_serial') for m in layout_to_save
+            ]
+        
+        # Combine display layout and enhanced Tiling Shell config
         complete_config = {
             'display_layout': layout_to_save,
-            'tiling_shell': tiling_shell_config
+            'tiling_shell': enhanced_tiling_config
         }
 
         if not os.path.exists(CONFIG_DIR):
@@ -324,25 +394,35 @@ class DisplayManager:
                 
                 # Find current connector and mode for this serial
                 current_connector = None
-                current_mode = None
+                restore_mode = None
                 
                 for phys_mon in physical_monitors:
                     # phys_mon[0] is (connector, vendor, product, serial)
                     if len(phys_mon[0]) >= 4 and phys_mon[0][3] == target_serial:
                         current_connector = phys_mon[0][0]
                         
-                        # Find the preferred or current mode
-                        for mode in phys_mon[1]:  # modes list
-                            mode_props = mode[5] if len(mode) > 5 else {}
-                            if isinstance(mode_props, dict):
-                                if mode_props.get('is-current') or mode_props.get('is-preferred'):
-                                    current_mode = mode[0]
+                        # Use saved mode if available, otherwise fallback to preferred/current
+                        saved_mode = props.get('current_mode')
+                        if saved_mode:
+                            # Check if saved mode still exists
+                            for mode in phys_mon[1]:  # modes list
+                                if mode[0] == saved_mode:
+                                    restore_mode = saved_mode
                                     break
-                        if not current_mode and phys_mon[1]:
-                            current_mode = phys_mon[1][0][0]  # fallback to first mode
+                        
+                        # Fallback if saved mode not found or not specified
+                        if not restore_mode:
+                            for mode in phys_mon[1]:  # modes list
+                                mode_props = mode[6] if len(mode) > 6 else {}
+                                if isinstance(mode_props, dict):
+                                    if mode_props.get('is-current') or mode_props.get('is-preferred'):
+                                        restore_mode = mode[0]
+                                        break
+                            if not restore_mode and phys_mon[1]:
+                                restore_mode = phys_mon[1][0][0]  # fallback to first mode
                         break
                 
-                if not current_connector or not current_mode:
+                if not current_connector or not restore_mode:
                     monitor_info = props.get('monitor_info', {})
                     display_name = f"{monitor_info.get('vendor', 'Unknown')} {monitor_info.get('product', 'Monitor')}"
                     print(f"Warning: Could not find monitor {display_name} (serial: {target_serial}), skipping")
@@ -355,7 +435,7 @@ class DisplayManager:
                 
                 monitor_specs.append((
                     current_connector,
-                    current_mode,
+                    restore_mode,
                     {
                         'vendor': GLib.Variant('s', vendor),
                         'product': GLib.Variant('s', product),
@@ -375,7 +455,7 @@ class DisplayManager:
                         if phys_mon[0][0] == connector:  # Match connector name
                             # Find the preferred or current mode
                             for mode in phys_mon[1]:  # modes list
-                                mode_props = mode[5] if len(mode) > 5 else {}
+                                mode_props = mode[6] if len(mode) > 6 else {}
                                 if isinstance(mode_props, dict):
                                     if mode_props.get('is-current') or mode_props.get('is-preferred'):
                                         current_mode = mode[0]  # mode string like '2560x1600@60.000'
@@ -408,6 +488,22 @@ class DisplayManager:
             )
             new_logical_monitors.append(monitor_variant)
 
+        # Sort new_logical_monitors by the same order as saved layout for consistency
+        # Extract serials from saved layout for ordering
+        saved_serials = []
+        for props in saved_layout_props:
+            if 'monitor_serial' in props:
+                saved_serials.append(props['monitor_serial'])
+        
+        # Sort new_logical_monitors to match saved order
+        if saved_serials:
+            monitor_order_map = {serial: i for i, serial in enumerate(saved_serials)}
+            new_logical_monitors.sort(key=lambda m: monitor_order_map.get(
+                # Extract serial from monitor specs
+                next((spec[2]['serial'].get_string() for spec in m[5] if len(spec) > 2), ''), 
+                999
+            ))
+
         try:
             # The ApplyMonitorsConfig method signature is (uua(iiduba(ssa{sv}))a{sv})
             # where u=serial, u=method, a(...)=array of logical monitors, a{sv}=properties
@@ -431,7 +527,9 @@ class DisplayManager:
             # Restore Tiling Shell configuration if available
             if tiling_shell_config:
                 time.sleep(0.5)  # Give the display config a moment to settle
-                if self.restore_tiling_shell_config(tiling_shell_config):
+                # Get current monitor serials in the order they were applied
+                current_serials = [props.get('monitor_serial') for props in saved_layout_props if props.get('monitor_serial')]
+                if self.restore_tiling_shell_config(tiling_shell_config, current_serials):
                     print("  - Tiling Shell layouts restored")
             
             # Reload Tiling Shell to refresh monitor names and apply restored config
