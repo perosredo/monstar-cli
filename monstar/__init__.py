@@ -1,4 +1,4 @@
-"""Monty Display Manager - GNOME display layout manager"""
+"""Monstar - GNOME display layout manager"""
 
-__version__ = "1.0.0"
-__author__ = "Your Name"
+__version__ = "0.0.3"
+__author__ = "ps"

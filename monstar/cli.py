@@ -21,6 +21,8 @@ class DisplayManager:
             '/org/gnome/Mutter/DisplayConfig',
             'org.gnome.Mutter.DisplayConfig',
             None)
+        self.autostart_dir = os.path.expanduser("~/.config/autostart/")
+        self.autostart_file = os.path.join(self.autostart_dir, "monstar-restore.desktop")
         
     def get_current_modes(self):
         # Get available modes for monitors
@@ -539,6 +541,80 @@ class DisplayManager:
         except Exception as e:
             print(f"Error applying layout: {e}")
 
+    def is_autostart_enabled(self):
+        """Check if autostart is enabled by checking if desktop file exists"""
+        return os.path.exists(self.autostart_file)
+    
+    def toggle_autostart(self):
+        """Toggle autostart mode on/off"""
+        if self.is_autostart_enabled():
+            # Disable autostart
+            try:
+                os.remove(self.autostart_file)
+                print("Autostart disabled.")
+                return True
+            except Exception as e:
+                print(f"Error disabling autostart: {e}")
+                return False
+        else:
+            # Enable autostart - create dummy desktop file
+            try:
+                if not os.path.exists(self.autostart_dir):
+                    os.makedirs(self.autostart_dir)
+                
+                # Create placeholder desktop file
+                desktop_content = """[Desktop Entry]
+Version=1.0
+Type=Application
+Name=Monstar Layout Restore
+Comment=Automatically restore monstar display layout on login
+Exec=echo "Monstar autostart placeholder"
+StartupNotify=false
+NoDisplay=true
+"""
+                with open(self.autostart_file, 'w') as f:
+                    f.write(desktop_content)
+                
+                print("Autostart enabled. Desktop file will update with each layout change.")
+                return True
+            except Exception as e:
+                print(f"Error enabling autostart: {e}")
+                return False
+    
+    def update_autostart_desktop_file(self, layout_name):
+        """Update autostart desktop file with current layout (if autostart is enabled)"""
+        if not self.is_autostart_enabled():
+            return
+        
+        # Create autostart directory if it doesn't exist
+        if not os.path.exists(self.autostart_dir):
+            os.makedirs(self.autostart_dir)
+        
+        # Find monstar executable path
+        monstar_path = subprocess.run(['which', 'monstar'], capture_output=True, text=True)
+        if monstar_path.returncode != 0:
+            # Fallback to python module execution
+            exec_path = f"python3 -m monstar.cli load {layout_name}"
+        else:
+            exec_path = f"{monstar_path.stdout.strip()} load {layout_name}"
+        
+        # Create desktop file content
+        desktop_content = f"""[Desktop Entry]
+Version=1.0
+Type=Application
+Name=Monstar Layout Restore
+Comment=Automatically restore monstar display layout on login
+Exec={exec_path}
+StartupNotify=false
+NoDisplay=true
+"""
+        
+        try:
+            with open(self.autostart_file, 'w') as f:
+                f.write(desktop_content)
+        except Exception as e:
+            print(f"Warning: Could not update autostart file: {e}")
+
 def print_help():
     """Print help message"""
     print("Monstar - GNOME Display Layout Manager")
@@ -553,6 +629,7 @@ def print_help():
     print("  shortcut <layout> <num>  - Set a numbered shortcut for a layout")
     print("  shortcuts                - List all shortcuts")
     print("  <number>                 - Load layout using shortcut number")
+    print("  --autostart              - Toggle automatic restoration of current layout on login")
     print("  help, --help, -h         - Show this help message")
     print()
     print("Examples:")
@@ -560,12 +637,14 @@ def print_help():
     print("  monstar load home")
     print("  monstar shortcut work 1   # Set shortcut: 'monstar 1' loads 'work'")
     print("  monstar 1                 # Quick load using shortcut")
+    print("  monstar --autostart       # Toggle auto-restore current layout on login")
     print("  monstar remove old-layout")
     print()
     print("Notes:")
     print("  - Layouts are saved with both display configuration and Tiling Shell layouts")
     print("  - Tiling Shell is automatically reloaded to refresh monitor names")
     print("  - Layouts are stored in ~/.config/monstar/")
+    print("  - When autostart is enabled, desktop file updates with each layout change")
 
 def main():
     if len(sys.argv) < 2 or sys.argv[1] in ['help', '--help', '-h']:
@@ -575,12 +654,18 @@ def main():
     dm = DisplayManager()
     command = sys.argv[1]
     
+    # Handle --autostart toggle
+    if command == "--autostart":
+        dm.toggle_autostart()
+        sys.exit(0)
+    
     # Check if command is a number (shortcut)
     if command.isdigit():
         layout_name = dm.get_shortcut_layout(command)
         if layout_name:
             print(f"Loading layout '{layout_name}' via shortcut {command}")
             dm.load_layout(layout_name)
+            dm.update_autostart_desktop_file(layout_name)
         else:
             print(f"No shortcut defined for '{command}'")
             dm.list_shortcuts()
@@ -606,7 +691,9 @@ def main():
             print("Error: Please provide a layout name to load.")
             dm.list_layouts()
             sys.exit(1)
-        dm.load_layout(sys.argv[2])
+        layout_name = sys.argv[2]
+        dm.load_layout(layout_name)
+        dm.update_autostart_desktop_file(layout_name)
     elif command == "remove":
         if len(sys.argv) < 3:
             print("Error: Please provide a layout name to remove.")

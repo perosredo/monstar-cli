@@ -4,10 +4,10 @@ from setuptools import setup, find_packages
 
 setup(
     name="monstar-cli",
-    version="0.0.1",
+    version="0.0.3",
     description="GNOME display layout manager CLI",
     author="ps",
-    author_email="petar@sredojevic.ca",
+    author_email="perosredo@users.noreply.github.com",
     packages=find_packages(),
     entry_points={
         'console_scripts': [

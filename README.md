@@ -7,6 +7,7 @@
 - 🖥️ **Save/Load Display Layouts** - Capture your current monitor setup, including on/off states, and switch between them instantly
 - 🎨 **Tiling Shell Integration** - Saves and restores Tiling Shell window layouts with each display profile
 - ⚡ **Numbered Shortcuts** - Quick access with `monstar 1`, `monstar 2`, etc.
+- 🚀 **Boot Persistence** - Auto-restore your preferred layout on login with `--autostart` toggle
 - 🔧 **Monitor Name Fix** - Automatically refreshes monitor names after configuration changes
 - 💻 **Pure CLI** - Lightweight command-line only tool
 
@@ -48,6 +49,9 @@ monstar 2  # Loads 'play' layout
 # List all shortcuts
 monstar shortcuts
 
+# Enable auto-restore on login (toggles on/off)
+monstar --autostart
+
 # Show help
 monstar --help
 ```
@@ -71,6 +75,9 @@ Layouts are stored in `~/.config/monstar/` as JSON files.
 - Display configuration (monitor positions, scales, resolutions, on/off states, rotations)
 - Tiling Shell window layouts (if Tiling Shell extension is installed)
 - Custom shortcuts mapping
+
+### Auto-Restore on Login
+When `--autostart` is enabled, Monstar creates `~/.config/autostart/monstar-restore.desktop` that automatically restores your last used layout when you log in. The desktop file updates every time you switch layouts, so it always restores your most recent configuration.
 
 ### Tiling Shell Integration
 If you have Tiling Shell extension installed, Monstar will:
@@ -105,10 +112,12 @@ When switching display configurations, GNOME sometimes resets monitor names to g
 1. **Set up your displays** the way you like for work
 2. **Save the layout**: `monstar save work`
 3. **Create a shortcut**: `monstar shortcut work 1`
-4. **Switch displays** for gaming/relaxing
-5. **Save another layout**: `monstar save play`
-6. **Create another shortcut**: `monstar shortcut play 2`
-7. **Quick switch** anytime: `monstar 1` for work, `monstar 2` for play
+4. **Enable autostart**: `monstar --autostart`
+5. **Switch displays** for gaming/relaxing
+6. **Save another layout**: `monstar save play`
+7. **Create another shortcut**: `monstar shortcut play 2`
+8. **Quick switch** anytime: `monstar 1` for work, `monstar 2` for play
+9. **Your layouts persist** across reboots automatically!
 
 ## Contributing
 
@@ -128,6 +137,7 @@ monstar list
 ```
 
 ### Recent Updates
+- Added `--autostart` toggle for boot persistence - no more manual layout restoration!
 - Added Tiling Shell integration for complete workspace management
 - Implemented numbered shortcuts for quick access
 - Fixed monitor name reset issue with automatic extension reload
