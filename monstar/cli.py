@@ -10,6 +10,16 @@ import subprocess
 import time
 
 CONFIG_DIR = os.path.expanduser("~/.config/monstar/")
+# Non-layout files that live in CONFIG_DIR; these names can't be used for layouts
+RESERVED_NAMES = {"shortcuts"}
+
+
+def reserved_name(name):
+    """Print an error and return True if name collides with an internal file."""
+    if name in RESERVED_NAMES:
+        print(f"Error: '{name}' is a reserved name and can't be used for a layout.")
+        return True
+    return False
 
 class DisplayManager:
     def __init__(self):
@@ -41,6 +51,8 @@ class DisplayManager:
         """Set a numbered shortcut for a layout"""
         if not layout_name or not shortcut_num:
             print("Error: Please provide both layout name and shortcut number.")
+            return
+        if reserved_name(layout_name):
             return
             
         # Verify the layout exists
@@ -110,6 +122,8 @@ class DisplayManager:
         if not name:
             print("Error: Please provide a layout name to remove.")
             return
+        if reserved_name(name):
+            return
         
         filepath = os.path.join(CONFIG_DIR, f"{name}.json")
         if not os.path.exists(filepath):
@@ -168,7 +182,7 @@ class DisplayManager:
             print("  (No layouts saved)")
             return
         for f in sorted(os.listdir(CONFIG_DIR)):
-            if f.endswith(".json"):
+            if f.endswith(".json") and f[:-5] not in RESERVED_NAMES:
                 print(f"  - {f[:-5]}")
 
     def get_tiling_shell_config(self):
@@ -250,9 +264,17 @@ class DisplayManager:
             print(f"Warning: Could not restore Tiling Shell config: {e}")
             return False
 
+    @staticmethod
+    def _color_props(phys_mon):
+        """Return color-mode / rgb-range from a physical monitor's properties dict."""
+        mon_props = phys_mon[2] if len(phys_mon) > 2 and isinstance(phys_mon[2], dict) else {}
+        return {k: mon_props[k] for k in ('color-mode', 'rgb-range') if k in mon_props}
+
     def save_layout(self, name):
         if not name:
             print("Error: Please provide a name for the layout.")
+            return
+        if reserved_name(name):
             return
 
         # FIX: The proxy call returns a tuple directly, no .unpack() needed.
@@ -276,6 +298,7 @@ class DisplayManager:
             monitor_serial = None
             monitor_info = {}
             current_mode = None
+            color_props = {}
             
             if physical_spec:
                 # physical_spec is [connector, vendor, product, serial]
@@ -291,6 +314,8 @@ class DisplayManager:
                 # Find the current mode for this monitor
                 for phys_mon in physical_monitors:
                     if len(phys_mon[0]) >= 4 and phys_mon[0][3] == serial:
+                        # HDR (color-mode) and RGB range live on the physical monitor
+                        color_props = self._color_props(phys_mon)
                         # Find the current mode
                         for mode in phys_mon[1]:  # modes list
                             mode_props = mode[6] if len(mode) > 6 else {}
@@ -315,6 +340,8 @@ class DisplayManager:
                 'monitor_serial': monitor_serial,
                 'monitor_info': monitor_info,
                 'current_mode': current_mode,
+                'color_mode': color_props.get('color-mode'),
+                'rgb_range': color_props.get('rgb-range'),
                 'properties': properties if 'properties' in locals() else {}
             })
 
@@ -354,6 +381,8 @@ class DisplayManager:
         if not name:
             print("Error: Please provide a layout name to load.")
             self.list_layouts()
+            return
+        if reserved_name(name):
             return
         
         filepath = os.path.join(CONFIG_DIR, f"{name}.json")
@@ -397,11 +426,13 @@ class DisplayManager:
                 # Find current connector and mode for this serial
                 current_connector = None
                 restore_mode = None
+                current_color = {}
                 
                 for phys_mon in physical_monitors:
                     # phys_mon[0] is (connector, vendor, product, serial)
                     if len(phys_mon[0]) >= 4 and phys_mon[0][3] == target_serial:
                         current_connector = phys_mon[0][0]
+                        current_color = self._color_props(phys_mon)
                         
                         # Use saved mode if available, otherwise fallback to preferred/current
                         saved_mode = props.get('current_mode')
@@ -435,15 +466,21 @@ class DisplayManager:
                 vendor = monitor_info.get('vendor', 'Unknown')
                 product = monitor_info.get('product', 'Monitor')
                 
-                monitor_specs.append((
-                    current_connector,
-                    restore_mode,
-                    {
-                        'vendor': GLib.Variant('s', vendor),
-                        'product': GLib.Variant('s', product),
-                        'serial': GLib.Variant('s', target_serial)
-                    }
-                ))
+                spec_props = {
+                    'vendor': GLib.Variant('s', vendor),
+                    'product': GLib.Variant('s', product),
+                    'serial': GLib.Variant('s', target_serial)
+                }
+                # Mutter resets omitted color props to default (HDR off), so always
+                # send them: saved value if the layout has one, else keep current.
+                for key, saved_key in (('color-mode', 'color_mode'), ('rgb-range', 'rgb_range')):
+                    value = props.get(saved_key)
+                    if value is None:
+                        value = current_color.get(key)
+                    if value is not None:
+                        spec_props[key] = GLib.Variant('u', value)
+                
+                monitor_specs.append((current_connector, restore_mode, spec_props))
                 
             else:
                 # Legacy format - old layouts with connector-based matching
