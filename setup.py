@@ -4,7 +4,7 @@ from setuptools import setup, find_packages
 
 setup(
     name="monstar-cli",
-    version="0.0.4",
+    version="0.0.5",
     description="GNOME display layout manager CLI",
     author="ps",
     author_email="perosredo@users.noreply.github.com",
