@@ -276,6 +276,12 @@ class DisplayManager:
             return
         if reserved_name(name):
             return
+        # `monstar <num>` always resolves via shortcuts, so a numeric layout name
+        # would be unreachable that way — almost certainly a mixup with shortcuts.
+        if name.isdigit():
+            print(f"Error: '{name}' is a shortcut slot, not a layout name.")
+            print(f"  Use: monstar save <name> && monstar shortcut <name> {name}")
+            return
 
         # FIX: The proxy call returns a tuple directly, no .unpack() needed.
         serial, physical_monitors, logical_monitors, properties = self.proxy.GetCurrentState()
